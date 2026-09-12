@@ -12,7 +12,7 @@ tasks on it:
     4. Count the number of paragraphs in the article.
     5. Count the number of sentences in the article.
 
-Author: Echo (Gladys Mwangi)
+Author: Echo (Gladys Mwake)
 """
 
 import re                          # regex: word extraction, sentence/paragraph splitting
@@ -267,7 +267,7 @@ def count_sentences(text):
 
 
 # --------------------------------------------------------------------------- #
-# Menu-driven program
+# Menu-driven program (multi-file edition)
 # --------------------------------------------------------------------------- #
 MENU_OPTIONS = [
     ("1", "Count how many times a specific word appears"),
@@ -275,58 +275,223 @@ MENU_OPTIONS = [
     ("3", "Calculate the average word length"),
     ("4", "Count the number of paragraphs"),
     ("5", "Count the number of sentences"),
-    ("6", "Exit"),
+    ("6", "Compare this result with another loaded article"),
+    ("7", "Switch active article"),
+    ("8", "Load an additional article"),
+    ("9", "Show all loaded articles"),
+    ("0", "Exit"),
 ]
 
 
-def display_menu():
+def display_menu(active_label):
     """Print the list of available text-analysis options."""
-    print("\n--- News Article Analyzer ---")
-    for option_number, description in MENU_OPTIONS:   # for loop
+    print(f"\n--- News Article Analyzer  [Active: {active_label}] ---")
+    for option_number, description in MENU_OPTIONS:   # for loop (rubric)
         print(f"{option_number}. {description}")
 
 
-def main():
-    """Run the interactive news-article analyzer."""
-    file_path = input("Enter the path to the news article text file: ").strip()
-    article_text = read_article(file_path)
+def load_articles_at_startup():
+    """
+    Ask the user how many articles to load, then collect a file path
+    (and optional label) for each one.
 
-    if not article_text:
-        print("No article text to analyze. Exiting.")
+    Returns:
+        list[dict]: Each element is {"label": str, "text": str}.
+                    The list contains only successfully loaded articles.
+    """
+    articles = []
+    while True:                                        # while loop (rubric)
+        raw = input("How many article files do you want to load? ").strip()
+        if raw.isdigit() and int(raw) >= 1:
+            count = int(raw)
+            break
+        print("Please enter a whole number of 1 or more.")
+
+    for i in range(1, count + 1):                     # for loop (rubric)
+        print(f"\n--- Article {i} of {count} ---")
+        file_path = input("  File path: ").strip()
+        label_input = input(
+            f"  Short label (press Enter to use the file path): "
+        ).strip()
+        label = label_input if label_input else file_path
+
+        text = read_article(file_path)
+        if text:                                       # if/else (rubric)
+            articles.append({"label": label, "text": text})
+            print(f"  Loaded successfully.")
+        else:
+            print(f"  Could not load file - skipping.")
+
+    return articles
+
+
+def pick_article(articles, prompt="Choose an article by number: "):
+    """
+    Show a numbered list of loaded articles and return the chosen one.
+
+    Args:
+        articles (list[dict]): The loaded articles.
+        prompt (str): The input prompt to display.
+
+    Returns:
+        dict | None: The chosen article dict, or None if the choice was invalid.
+    """
+    for idx, article in enumerate(articles, 1):        # for loop
+        print(f"  {idx}. {article['label']}")
+    raw = input(prompt).strip()
+    if raw.isdigit() and 1 <= int(raw) <= len(articles):
+        return articles[int(raw) - 1]
+    print("Invalid selection.")
+    return None
+
+
+def compare_result(func, articles, active_article, func_name, **kwargs):
+    """
+    Run func on the active article AND a user-chosen second article,
+    then print both results side-by-side.
+
+    Args:
+        func: One of the five analysis functions.
+        articles (list[dict]): All loaded articles.
+        active_article (dict): The currently active article.
+        func_name (str): Human-readable name for the display line.
+        **kwargs: Extra keyword arguments forwarded to func.
+    """
+    others = [a for a in articles if a is not active_article]
+    if not others:                                     # if/else
+        print("Only one article is loaded - nothing to compare with.")
         return
 
-    running = True
-    while running:                                      # while loop
-        display_menu()
-        choice = input("Choose an option (1-6): ").strip()
+    print("\nChoose the article to compare against:")
+    second = pick_article(others)
+    if second is None:
+        return
 
-        if choice == "1":                                # if/elif/else conditional
+    result_a = func(active_article["text"], **kwargs)
+    result_b = func(second["text"], **kwargs)
+
+    label_a = active_article["label"]
+    label_b = second["label"]
+    width = max(len(label_a), len(label_b), 40)
+    print(f"\n  {func_name}")
+    print(f"  {label_a:<{width}}  {result_a}")
+    print(f"  {label_b:<{width}}  {result_b}")
+
+
+def main():
+    """Run the interactive multi-article news analyzer."""
+    print("=== News Article Analyzer ===\n")
+    articles = load_articles_at_startup()
+
+    if not articles:                                   # if/else (rubric)
+        print("No articles could be loaded. Exiting.")
+        return
+
+    active = articles[0]
+    print(f"\nActive article set to: '{active['label']}'")
+
+    running = True
+    while running:                                     # while loop (rubric)
+        display_menu(active["label"])
+        choice = input("Choose an option (0-9): ").strip()
+
+        if choice == "1":                              # if/elif/else (rubric)
             word = input("Enter the word to search for: ").strip()
-            result = count_specific_word(article_text, word)
-            print(f'The word "{word}" appears {result} time(s).')
+            result = count_specific_word(active["text"], word)
+            print(f"  The word appears {result} time(s).")
 
         elif choice == "2":
-            result = identify_most_common_word(article_text)
-            print(f"The most common word is: {result}")
+            result = identify_most_common_word(active["text"])
+            print(f"  Most common word: {result}")
 
         elif choice == "3":
-            result = calculate_average_word_length(article_text)
-            print(f"The average word length is: {result:.2f} characters")
+            result = calculate_average_word_length(active["text"])
+            print(f"  Average word length: {result:.2f} characters")
 
         elif choice == "4":
-            result = count_paragraphs(article_text)
-            print(f"The article has {result} paragraph(s).")
+            result = count_paragraphs(active["text"])
+            print(f"  Paragraph count: {result}")
 
         elif choice == "5":
-            result = count_sentences(article_text)
-            print(f"The article has {result} sentence(s).")
+            result = count_sentences(active["text"])
+            print(f"  Sentence count: {result}")
 
         elif choice == "6":
+            print("\nWhat would you like to compare?")
+            compare_options = [
+                ("1", "Word count for a specific word"),
+                ("2", "Most common word"),
+                ("3", "Average word length"),
+                ("4", "Number of paragraphs"),
+                ("5", "Number of sentences"),
+            ]
+            for opt, desc in compare_options:          # for loop
+                print(f"  {opt}. {desc}")
+            sub = input("Choose (1-5): ").strip()
+
+            if sub == "1":                             # if/elif/else
+                word = input("Enter the word to compare: ").strip()
+                compare_result(
+                    count_specific_word, articles, active,
+                    f"Count of word", word=word,
+                )
+            elif sub == "2":
+                compare_result(
+                    identify_most_common_word, articles, active,
+                    "Most common word",
+                )
+            elif sub == "3":
+                compare_result(
+                    calculate_average_word_length, articles, active,
+                    "Average word length",
+                )
+            elif sub == "4":
+                compare_result(
+                    count_paragraphs, articles, active,
+                    "Paragraph count",
+                )
+            elif sub == "5":
+                compare_result(
+                    count_sentences, articles, active,
+                    "Sentence count",
+                )
+            else:
+                print("Invalid sub-choice.")
+
+        elif choice == "7":
+            print("\nSwitch to which article?")
+            chosen = pick_article(articles)
+            if chosen:                                 # if/else
+                active = chosen
+                print(f"  Active article is now: '{active['label']}'")
+
+        elif choice == "8":
+            file_path = input("File path of new article: ").strip()
+            label_input = input(
+                "Short label (press Enter to use the file path): "
+            ).strip()
+            label = label_input if label_input else file_path
+            text = read_article(file_path)
+            if text:                                   # if/else
+                new_article = {"label": label, "text": text}
+                articles.append(new_article)
+                print(f"  Loaded. Switching to it as active.")
+                active = new_article
+            else:
+                print("  Could not load that file.")
+
+        elif choice == "9":
+            print(f"\n  {len(articles)} article(s) loaded:")
+            for idx, article in enumerate(articles, 1):  # for loop
+                marker = " <- active" if article is active else ""
+                print(f"    {idx}. {article['label']}{marker}")
+
+        elif choice == "0":
             print("Goodbye!")
             running = False
 
         else:
-            print("Invalid choice. Please enter a number from 1 to 6.")
+            print("Invalid choice. Please enter a number from 0 to 9.")
 
 
 if __name__ == "__main__":
