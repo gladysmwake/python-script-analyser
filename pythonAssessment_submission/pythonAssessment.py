@@ -200,14 +200,31 @@ def count_paragraphs(text):
 
     # Fallback: some article files use one paragraph per line instead of
     # blank-line separation. If the blank-line rule found only a single
-    # block but the text clearly has more than one line, treat each
-    # non-empty line as its own paragraph instead of undercounting.
+    # block but the text clearly has more than one line, we try to decide
+    # whether each line is its own paragraph OR whether the text is simply
+    # hard-wrapped at a fixed column width.
+    #
+    # Heuristic: in a one-paragraph-per-line file, each line tends to END
+    # with sentence-closing punctuation (. ! ? or a closing quote/bracket).
+    # In a hard-wrapped file, most lines end mid-sentence (no punctuation)
+    # and only the LAST line of the paragraph ends with punctuation.
+    # If more than half the lines end with closing punctuation we treat
+    # each line as its own paragraph; otherwise we assume hard-wrapped text
+    # and return 1 (a single paragraph) instead of over-counting.
     if len(paragraphs) <= 1 and "\n" in stripped_text:
         line_based_paragraphs = [
             line for line in stripped_text.split("\n") if line.strip()
         ]
         if len(line_based_paragraphs) > 1:
-            return len(line_based_paragraphs)
+            ends_with_punct = sum(
+                1 for line in line_based_paragraphs
+                if re.search(r'[.!?"\u2019\u201d]\s*$', line.strip())
+            )
+            fraction = ends_with_punct / len(line_based_paragraphs)
+            if fraction > 0.5:
+                # Most lines close with punctuation -> one paragraph per line.
+                return len(line_based_paragraphs)
+            # else: hard-wrapped text -> fall through and return 1.
 
     return len(paragraphs) if paragraphs else 1
 
@@ -226,14 +243,16 @@ def count_sentences(text):
           _ABBREVIATIONS above).
         - Decimal numbers such as "3.5" (a period directly between two
           digits).
-        - A period immediately followed by a lowercase word (e.g.
-          "misc. items"). Real sentences in standard prose almost always
-          start with a capital letter, so this catches many abbreviations
-          that aren't explicitly listed above -- without needing to know
-          every abbreviation in advance.
-    This is a heuristic, not a full grammar parser -- it will not catch
-    every abbreviation in every article, but it correctly handles the
-    common cases that would otherwise inflate the sentence count.
+        - A period after a SHORT token (1-5 chars) followed by a lowercase
+          word, e.g. "misc. items".  Only SHORT tokens are protected here
+          because real abbreviations are almost always short (misc, dept,
+          est, vs) while words that genuinely end a sentence (technology,
+          closed, market) are long.  This avoids the previous weakness
+          where a period after any word followed by a lowercase sentence
+          starter (e.g. "...closed. eBay then...") was falsely protected.
+    This is a heuristic, not a full grammar parser -- it covers the vast
+    majority of real news-article cases without requiring a complete
+    abbreviation list.
 
     Args:
         text (str): The text to analyze.
@@ -255,10 +274,12 @@ def count_sentences(text):
     # Protect decimal numbers, e.g. "3.5" -> "3<PERIOD>5".
     working_text = re.sub(r"(?<=\d)\.(?=\d)", "<PERIOD>", working_text)
 
-    # Protect unlisted abbreviations followed by a lowercase word, e.g.
-    # "misc. items" -> "misc<PERIOD> items". Only applies to '.', since
-    # '!' and '?' are essentially never used mid-abbreviation.
-    working_text = re.sub(r"\.(?=\s+[a-z])", "<PERIOD>", working_text)
+    # Protect a SHORT token (1-5 chars) followed by a period then a
+    # lowercase word, e.g. "misc. items" -> "misc<PERIOD> items".
+    # Capped at 5 chars so long words like "closed" or "market" still
+    # act as genuine sentence boundaries even when the next word starts
+    # lowercase (e.g. "...market. eBay then announced...").
+    working_text = re.sub(r"\b(\w{1,5})\.(?=\s+[a-z])", r"\1<PERIOD>", working_text)
 
     sentences = re.split(r"[.!?]+", working_text)
     sentences = [s for s in sentences if s.strip()]

@@ -81,26 +81,45 @@ check(
 
 # --------------------------------------------------------------------------- #
 # Fix 3: an UNLISTED abbreviation followed by a lowercase word is still
-# protected, via the generic lowercase-follows-period heuristic.
+# protected via the SHORT-token heuristic (token <= 5 chars before the period).
 # --------------------------------------------------------------------------- #
 check(
     "count_sentences ignores unlisted abbreviations before a lowercase word",
     count_sentences("The misc. items were sorted. Then we left."),
     2,
 )
+# Improvement over the old heuristic: a LONG word before a period should still
+# act as a sentence boundary even when the next word starts lowercase
+# (e.g. brand names like 'eBay' start with a lowercase letter).
+check(
+    "count_sentences splits after a long word even before a lowercase next word",
+    count_sentences("The market closed. eBay then announced gains."),
+    2,
+)
 
 # --------------------------------------------------------------------------- #
-# Fix 4: paragraph counting falls back to one-paragraph-per-line when a
-# file has no blank lines at all, instead of undercounting as 1.
+# Fix 4: paragraph counting uses punctuation to distinguish one-paragraph-per-line
+# files from hard-wrapped text (both have no blank lines).
 # --------------------------------------------------------------------------- #
 check(
-    "count_paragraphs falls back to line-based counting with no blank lines",
+    "count_paragraphs falls back to line-based counting when lines end with punct",
     count_paragraphs("First paragraph here.\nSecond paragraph here.\nThird one too."),
     3,
 )
 check(
     "count_paragraphs still returns 1 for a genuine single-line single paragraph",
     count_paragraphs("Just one paragraph, no newlines."),
+    1,
+)
+# Hard-wrapped text (single paragraph, lines end mid-sentence) must return 1,
+# not one count per line.
+check(
+    "count_paragraphs returns 1 for hard-wrapped single paragraph",
+    count_paragraphs(
+        "This is a long sentence that wraps\n"
+        "around to the next line and continues\n"
+        "here without ending punctuation."
+    ),
     1,
 )
 
