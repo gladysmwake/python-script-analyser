@@ -15,9 +15,19 @@ tasks on it:
 Author: Echo (Gladys Mwake)
 """
 
+import os                          # file path handling
 import re                          # regex: word extraction, sentence/paragraph splitting
 import string                      # provides string.punctuation for cleaning words
 from collections import Counter    # efficient way to find the most frequent word
+
+# Optional native GUI file picker via Tkinter (Python standard library).
+# Falls back gracefully to standard console input if unavailable or headless.
+try:
+    import tkinter as tk
+    from tkinter import filedialog
+    _TKINTER_AVAILABLE = True
+except ImportError:
+    _TKINTER_AVAILABLE = False
 
 
 # Punctuation-removal table, built once and reused by every function that
@@ -311,16 +321,85 @@ def display_menu(active_label):
         print(f"{option_number}. {description}")
 
 
+def browse_for_files(title="Select article file(s)"):
+    """
+    Open a native OS file dialog allowing single or multi-file selection.
+
+    Returns:
+        list[str]: Selected file paths, or an empty list if cancelled / unavailable.
+    """
+    if not _TKINTER_AVAILABLE:
+        return []
+    try:
+        root = tk.Tk()
+        root.withdraw()
+        root.attributes("-topmost", True)
+        selected = filedialog.askopenfilenames(
+            title=title,
+            filetypes=[
+                ("Text files (*.txt)", "*.txt"),
+                ("All files (*.*)", "*.*"),
+            ],
+        )
+        root.destroy()
+        return list(selected) if selected else []
+    except Exception:
+        return []
+
+
+def browse_for_file(title="Select an article file"):
+    """
+    Open a native OS file dialog to pick a single file.
+
+    Returns:
+        str: Selected file path, or empty string if cancelled / unavailable.
+    """
+    files = browse_for_files(title=title)
+    return files[0] if files else ""
+
+
 def load_articles_at_startup():
     """
     Ask the user how many articles to load, then collect a file path
-    (and optional label) for each one.
+    (and optional label) for each one. Supports selecting files directly
+    from File Explorer via a native GUI dialog, as well as typing paths.
 
     Returns:
         list[dict]: Each element is {"label": str, "text": str}.
                     The list contains only successfully loaded articles.
     """
     articles = []
+
+    # If GUI file picker is available, offer it upfront
+    if _TKINTER_AVAILABLE:
+        print("Choose how to load article files:")
+        print("  1. Browse and select file(s) using File Explorer")
+        print("  2. Type file path(s) manually")
+        entry_method = input("Enter your choice (1 or 2, default: 1): ").strip()
+        if entry_method in ("", "1"):
+            print("Opening File Explorer dialog... (you can select multiple files with Ctrl/Shift)")
+            chosen_paths = browse_for_files("Select one or more article text files")
+            if chosen_paths:
+                print(f"\nSelected {len(chosen_paths)} file(s) from File Explorer.")
+                for path in chosen_paths:
+                    filename = os.path.basename(path)
+                    label_input = input(
+                        f"  Short label for '{filename}' (press Enter to keep '{filename}'): "
+                    ).strip()
+                    label = label_input if label_input else filename
+                    text = read_article(path)
+                    if text:                           # if/else (rubric)
+                        articles.append({"label": label, "text": text})
+                        print("  Loaded successfully.")
+                    else:
+                        print(f"  Could not load file '{path}' - skipping.")
+                if articles:
+                    return articles
+                print("None of the selected files could be read. Falling back to manual entry.\n")
+            else:
+                print("No files were selected. Falling back to manual entry.\n")
+
+    # Manual path entry (or fallback)
     while True:                                        # while loop (rubric)
         raw = input("How many article files do you want to load? ").strip()
         if raw.isdigit() and int(raw) >= 1:
@@ -330,18 +409,27 @@ def load_articles_at_startup():
 
     for i in range(1, count + 1):                     # for loop (rubric)
         print(f"\n--- Article {i} of {count} ---")
-        file_path = input("  File path: ").strip()
+        prompt = "  File path (or type 'B' to browse): " if _TKINTER_AVAILABLE else "  File path: "
+        file_path = input(prompt).strip()
+        if _TKINTER_AVAILABLE and file_path.lower() == "b":
+            file_path = browse_for_file(f"Select article {i} of {count}")
+            if file_path:
+                print(f"  Selected: {file_path}")
+            else:
+                file_path = input("  No file selected. Please enter file path manually: ").strip()
+
+        default_label = os.path.basename(file_path) if file_path else f"Article {i}"
         label_input = input(
-            f"  Short label (press Enter to use the file path): "
+            f"  Short label (press Enter to use '{default_label}'): "
         ).strip()
-        label = label_input if label_input else file_path
+        label = label_input if label_input else default_label
 
         text = read_article(file_path)
         if text:                                       # if/else (rubric)
             articles.append({"label": label, "text": text})
-            print(f"  Loaded successfully.")
+            print("  Loaded successfully.")
         else:
-            print(f"  Could not load file - skipping.")
+            print("  Could not load file - skipping.")
 
     return articles
 
@@ -487,16 +575,26 @@ def main():
                 print(f"  Active article is now: '{active['label']}'")
 
         elif choice == "8":
-            file_path = input("File path of new article: ").strip()
+            file_path = ""
+            if _TKINTER_AVAILABLE:
+                method = input("Load via File Explorer [B]rowse or [T]ype path? (B/t): ").strip().lower()
+                if method != "t":
+                    file_path = browse_for_file("Select an article file")
+                    if file_path:
+                        print(f"  Selected: {file_path}")
+            if not file_path:
+                file_path = input("File path of new article: ").strip()
+
+            default_label = os.path.basename(file_path) if file_path else "New Article"
             label_input = input(
-                "Short label (press Enter to use the file path): "
+                f"Short label (press Enter to use '{default_label}'): "
             ).strip()
-            label = label_input if label_input else file_path
+            label = label_input if label_input else default_label
             text = read_article(file_path)
             if text:                                   # if/else
                 new_article = {"label": label, "text": text}
                 articles.append(new_article)
-                print(f"  Loaded. Switching to it as active.")
+                print("  Loaded. Switching to it as active.")
                 active = new_article
             else:
                 print("  Could not load that file.")
